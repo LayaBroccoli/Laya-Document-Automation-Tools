@@ -102,7 +102,7 @@ class DocumentGenerator {
         // 插入图片
         if (result.images && result.images.length) {
             result.images.forEach((img, imgIndex) => {
-                const [stepNum, phase] = img.replace('.png', '').split('-');
+                if (!img) return; // 跳过失败的截图
                 content += `![](img/${img})\n\n`;
                 content += `（图${chapterNum}-${imgIndex + 1}）${step.title}\n\n`;
             });
@@ -111,6 +111,7 @@ class DocumentGenerator {
         // 插入动图
         if (result.gifs && result.gifs.length) {
             result.gifs.forEach(gif => {
+                if (!gif) return; // 跳过失败的GIF
                 content += `![](img/${gif})\n\n`;
                 content += `（动图${chapterNum}）${step.title}演示\n\n`;
             });

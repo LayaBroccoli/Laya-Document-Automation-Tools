@@ -158,7 +158,7 @@ class StepExecutor {
      * 录制GIF
      */
     async _recordGif(step) {
-        const filename = `${step}.gif`;
+        const filename = `${step.step}.gif`;
         const filepath = path.join(this.imgDir, filename);
 
         if (this.dryRun) {

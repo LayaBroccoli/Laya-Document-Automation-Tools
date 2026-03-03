@@ -102,8 +102,10 @@ async function main() {
 
     // 5. 执行步骤
     console.log(`\n⚡ 执行步骤...`);
+    // 使用实际有依赖的tools目录
+    const realToolsPath = 'D:/LayaProject/aidoc/tools';
     const executor = new StepExecutor({
-        scriptsPath: TOOLS,
+        scriptsPath: realToolsPath,
         imgDir: imgDir,
         dryRun: args.dryRun
     });
