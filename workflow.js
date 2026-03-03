@@ -2,195 +2,228 @@
 /**
  * workflow.js — 文档自动生成工作流（集成MCP）
  *
- * 一句话生成带图片和动态图的完整文档
- *
  * 用法:
- *   node workflow.js "写一个PhysicsCollider组件的教程"
- *   node workflow.js "RigidBody组件文档" --output docs/
- *   node workflow.js "实现滚动背景" --dry-run
+ *   node workflow.js "PhysicsCollider组件文档"
+ *   node workflow.js "如何使用RigidBody" --dry-run
+ *   node workflow.js "Scene3D入门教程" --output docs/
  */
 
 const fs = require('fs');
 const path = require('path');
-const DocumentGenerator = require('./generator');
+const { execSync } = require('child_process');
 
-// MCP工具代理（通过文件传递参数调用）
-class MCPProxy {
+const TOOLS = __dirname;
+
+// ─────────────────────────────────────────────────────────────
+// MCP调用（通过Claude Code的MCP工具）
+// ─────────────────────────────────────────────────────────────
+
+class MCPClient {
     constructor() {
-        // 结果文件路径
-        this.resultFile = path.join(__dirname, '.mcp_result.json');
+        // MCP结果存储
+        this.cache = new Map();
     }
 
     /**
-     * 调用MCP工具获取API信息
+     * 查询API
      */
-    async queryAPI(query, version = 'v3.4') {
-        return this._callMCP('query_api', { query, version });
+    queryAPI(query, version = 'v3.4') {
+        const cacheKey = `query_${query}_${version}`;
+        if (this.cache.has(cacheKey)) return this.cache.get(cacheKey);
+
+        // 这里需要AI通过MCP工具实际调用
+        // 返回模拟数据供测试
+        return { results: [], total: 0 };
     }
 
     /**
      * 获取组件schema
      */
     async getSchema(name) {
-        return this._callMCP('get_schema_by_name', { name });
+        const cacheKey = `schema_${name}`;
+        if (this.cache.has(cacheKey)) return this.cache.get(cacheKey);
+
+        // AI需要调用: mcp__laya_mcp_server__get_schema_by_name
+        // 暂时返回null，实际由AI在对话中调用MCP后传入
+        return null;
     }
 
     /**
      * 获取API详情
      */
     async getAPIDetail(name, version = 'v3.4') {
-        return this._callMCP('get_api_detail', { name, version });
+        const cacheKey = `detail_${name}_${version}`;
+        if (this.cache.has(cacheKey)) return this.cache.get(cacheKey);
+
+        // AI需要调用: mcp__laya_mcp_server__get_api_detail
+        return null;
     }
 
     /**
      * 获取示例
      */
     async getExamples(name, version = 'v3.4') {
-        return this._callMCP('get_examples', { name, version });
+        const cacheKey = `examples_${name}_${version}`;
+        if (this.cache.has(cacheKey)) return this.cache.get(cacheKey);
+
+        // AI需要调用: mcp__laya_mcp_server__get_examples
+        return [];
     }
 
     /**
-     * 调用MCP（通过文件传递）
+     * 设置MCP数据（由AI在对话中调用MCP后注入）
      */
-    async _callMCP(tool, params) {
-        const requestFile = path.join(__dirname, '.mcp_request.json');
-        fs.writeFileSync(requestFile, JSON.stringify({ tool, params }), 'utf8');
-
-        // 等待AI处理请求并写入结果
-        // 这里需要AI来调用MCP并写入结果文件
-        // 暂时返回空对象，实际需要AI配合
-        await this._sleep(100);
-
-        if (fs.existsSync(this.resultFile)) {
-            const result = JSON.parse(fs.readFileSync(this.resultFile, 'utf8'));
-            fs.unlinkSync(this.resultFile);
-            return result.data;
-        }
-
-        return null;
+    setSchema(name, schema) {
+        this.cache.set(`schema_${name}`, schema);
     }
 
-    _sleep(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
+    setAPIDetail(name, detail) {
+        this.cache.set(`detail_${name}`, detail);
+    }
+
+    setExamples(name, examples) {
+        this.cache.set(`examples_${name}`, examples);
     }
 }
 
 // ─────────────────────────────────────────────────────────────
-// 智能步骤规划器（集成MCP）
+// 智能规划器
 // ─────────────────────────────────────────────────────────────
 
-class SmartPlanner {
+class AutoPlanner {
     constructor() {
-        this.mcp = new MCPProxy();
+        this.mcp = new MCPClient();
     }
 
-    async plan(input) {
-        // 1. 意图识别和主题提取
-        const intent = this.detectIntent(input);
-        const topic = this.extractTopic(input);
+    /**
+     * 主规划入口
+     */
+    async plan(input, mcpDataProvider = null) {
+        // 1. 解析输入
+        const parsed = this._parseInput(input);
 
-        console.log(`📋 规划: ${topic} (${intent})`);
+        console.log(`📋 规划: ${parsed.topic} (${parsed.intent})`);
 
-        // 2. MCP查询
-        const mcpData = await this.queryMCP(topic, intent);
+        // 2. 获取MCP数据
+        const mcpData = await this._getMCPData(parsed, mcpDataProvider);
 
-        // 3. 根据MCP数据生成具体步骤
-        const steps = await this.generateSteps(topic, intent, mcpData);
+        // 3. 生成步骤
+        const steps = await this._generateSteps(parsed, mcpData);
 
-        return { topic, intent, steps, mcpData };
+        return {
+            topic: parsed.topic,
+            intent: parsed.intent,
+            steps,
+            mcpData
+        };
     }
 
-    detectIntent(input) {
-        if (/组件|属性|Collision|RigidBody/.test(input)) return 'api';
-        if (/实现|功能|效果/.test(input)) return 'feature';
-        if (/场景|3D|2D/.test(input)) return 'tutorial';
-        return 'tutorial';
-    }
-
-    extractTopic(input) {
-        return input
-            .replace(/^(写一个|写|生成|创建|关于|如何|怎么)/, '')
-            .replace(/(的文档|的教程|入门|实现|制作|创建|添加)/g, '')
+    /**
+     * 解析用户输入
+     */
+    _parseInput(input) {
+        // 移除前缀词
+        const cleaned = input
+            .replace(/^(写一个|写|生成|创建|关于|如何|怎么|做一个|做个)/, '')
+            .replace(/(的文档|的教程|入门|实现|制作|创建|添加|使用)/g, '')
             .trim();
+
+        // 意图识别
+        let intent = 'tutorial';
+        if (/组件|Component|Collider|RigidBody|Joint/.test(cleaned)) intent = 'component';
+        else if (/属性|Property/.test(cleaned)) intent = 'property';
+        else if (/场景|Scene/.test(cleaned)) intent = 'scene';
+        else if (/项目|Project/.test(cleaned)) intent = 'project';
+        else if (/API|功能/.test(cleaned)) intent = 'feature';
+
+        return {
+            topic: cleaned,
+            intent,
+            original: input
+        };
     }
 
-    async queryMCP(topic, intent) {
-        const data = { schema: null, examples: [], apiInfo: null };
+    /**
+     * 获取MCP数据
+     */
+    async _getMCPData(parsed, provider) {
+        const data = {
+            schema: null,
+            apiInfo: null,
+            examples: []
+        };
 
-        // 尝试获取schema
-        try {
-            const schema = await this.mcp.getSchema(topic);
-            if (schema) data.schema = schema;
-        } catch (e) {
-            // 不是组件，尝试查询API
+        if (provider) {
+            // 使用外部提供的MCP数据（AI调用后传入）
+            return provider(parsed.topic);
         }
 
-        // 尝试获取API详情
-        try {
-            const apiInfo = await this.mcp.getAPIDetail(topic);
-            if (apiInfo) data.apiInfo = apiInfo;
-        } catch (e) {
-            // API不存在
-        }
-
-        // 尝试获取示例
-        try {
-            const examples = await this.mcp.getExamples(topic);
-            if (examples) data.examples = examples;
-        } catch (e) {
-            // 没有示例
+        // 尝试从缓存获取
+        if (parsed.intent === 'component') {
+            data.schema = await this.mcp.getSchema(parsed.topic);
+            data.apiInfo = await this.mcp.getAPIDetail(parsed.topic);
+            data.examples = await this.mcp.getExamples(parsed.topic);
         }
 
         return data;
     }
 
-    async generateSteps(topic, intent, mcpData) {
-        // 根据MCP数据生成定制化步骤
-        if (mcpData.schema) {
-            // 是一个组件
-            return this.generateComponentSteps(topic, mcpData.schema);
-        } else if (topic.includes('3D场景') || topic.includes('Scene3D')) {
-            // 3D场景教程
-            return this.get3DSceneSteps();
-        } else if (topic.includes('创建项目') || topic.includes('项目')) {
-            // 创建项目教程
-            return this.getProjectSteps();
+    /**
+     * 生成步骤
+     */
+    async _generateSteps(parsed, mcpData) {
+        const { topic, intent } = parsed;
+
+        // 根据意图和MCP数据选择生成器
+        if (intent === 'component' && mcpData?.schema) {
+            return this._componentSteps(topic, mcpData.schema);
+        } else if (intent === 'component') {
+            return this._componentGenericSteps(topic);
+        } else if (intent === 'scene') {
+            return this._sceneSteps(topic);
+        } else if (intent === 'project') {
+            return this._projectSteps(topic);
         } else {
-            // 默认教程
-            return this.getDefaultSteps();
+            return this._genericSteps(topic);
         }
     }
 
-    generateComponentSteps(componentName, schema) {
+    /**
+     * 组件教程步骤（有schema数据）
+     */
+    _componentSteps(name, schema) {
+        const props = schema.properties || {};
+        const propCount = Object.keys(props).length;
+
         return [
             {
                 step: 1,
-                title: `创建${componentName}节点`,
-                desc: `在层级面板中右键，选择3D节点 -> 3D精灵（或2D节点，根据组件类型）`,
+                title: `创建节点`,
+                desc: `在层级面板中右键，创建适合${name}的节点类型`,
                 action: 'createNode',
                 needScreenshot: true,
                 screenshotPhase: 'after'
             },
             {
                 step: 2,
-                title: `添加${componentName}组件`,
-                desc: `选中节点，在属性面板点击"增加组件"，选择${componentName}`,
+                title: `添加${name}组件`,
+                desc: `选中节点，在属性面板点击"增加组件"，选择${name}`,
                 action: 'addComponent',
                 needScreenshot: true,
                 needGif: true
             },
             {
                 step: 3,
-                title: '设置组件属性',
-                desc: this._generatePropertyDesc(schema),
-                action: 'setProperties',
+                title: '配置组件属性',
+                desc: `组件包含${propCount}个属性，根据需求设置关键属性`,
+                action: 'configure',
                 needScreenshot: true,
-                contentData: this._formatProperties(schema)
+                contentData: this._formatPropTable(props)
             },
             {
                 step: 4,
                 title: '运行验证',
-                desc: '点击运行按钮，查看效果',
+                desc: '点击运行按钮，查看组件效果',
                 action: 'run',
                 needScreenshot: true,
                 needGif: true
@@ -198,78 +231,140 @@ class SmartPlanner {
         ];
     }
 
-    get3DSceneSteps() {
+    /**
+     * 组件教程步骤（通用）
+     */
+    _componentGenericSteps(name) {
         return [
             {
                 step: 1,
-                title: '创建3D项目',
-                desc: '打开IDE，点击"创建项目"，选择3D空项目',
-                action: 'createProject',
+                title: '创建节点',
+                desc: `在层级面板中创建目标节点`,
+                action: 'createNode',
                 needScreenshot: true
             },
             {
                 step: 2,
-                title: '认识3D场景',
-                desc: '3D场景包含Scene3D（根节点）、Camera（摄像机）、Light（光照）',
-                action: 'explain',
-                needScreenshot: true
+                title: `添加${name}组件`,
+                desc: `选中节点，在属性面板添加${name}组件`,
+                action: 'addComponent',
+                needScreenshot: true,
+                needGif: true
             },
             {
                 step: 3,
-                title: '调整摄像机',
-                desc: '选中Camera，设置位置为(0,5,-12)，让摄像机位于场景后上方',
-                action: 'setCamera',
+                title: '设置属性',
+                desc: '在属性面板中设置组件的各项属性',
+                action: 'configure',
                 needScreenshot: true
             },
             {
                 step: 4,
                 title: '运行测试',
-                desc: '点击运行按钮，查看空场景效果',
+                desc: '运行查看效果',
                 action: 'run',
                 needScreenshot: true
             }
         ];
     }
 
-    getProjectSteps() {
+    /**
+     * 场景教程步骤
+     */
+    _sceneSteps(name) {
         return [
             {
                 step: 1,
-                title: '创建新项目',
-                desc: '点击IDE右上角"创建项目"，选择项目类型',
-                action: 'createProject',
-                needScreenshot: true
+                title: '创建场景',
+                desc: `在资源面板右键assets目录，选择"新建"→"3D场景"`,
+                action: 'createScene',
+                needScreenshot: true,
+                screenshotPhase: 'after'
             },
             {
                 step: 2,
-                title: '设置项目信息',
-                desc: '输入项目名称，选择保存位置，点击创建',
-                action: 'configure',
+                title: '认识场景结构',
+                desc: '3D场景包含Scene3D根节点、Camera摄像机、Light光源',
+                action: 'explain',
                 needScreenshot: true
             },
             {
                 step: 3,
-                title: '认识IDE界面',
-                desc: '熟悉层级面板、资源面板、属性面板、场景编辑器',
+                title: '调整基础设置',
+                desc: '设置场景尺寸、背景色等基础属性',
+                action: 'configure',
+                needScreenshot: true
+            },
+            {
+                step: 4,
+                title: '添加基础物体',
+                desc: '创建一个3D精灵或立方体作为测试物体',
+                action: 'addObject',
+                needScreenshot: true,
+                needGif: true
+            },
+            {
+                step: 5,
+                title: '运行预览',
+                desc: '点击运行按钮查看场景效果',
+                action: 'run',
+                needScreenshot: true
+            }
+        ];
+    }
+
+    /**
+     * 项目教程步骤
+     */
+    _projectSteps(name) {
+        return [
+            {
+                step: 1,
+                title: '打开创建面板',
+                desc: '点击IDE右上角"创建项目"按钮',
+                action: 'openDialog',
+                needScreenshot: true
+            },
+            {
+                step: 2,
+                title: '选择项目类型',
+                desc: `在模板列表中选择项目类型（2D/3D空项目等）`,
+                action: 'selectType',
+                needScreenshot: true
+            },
+            {
+                step: 3,
+                title: '设置项目信息',
+                desc: '输入项目名称，选择保存位置，点击创建',
+                action: 'create',
+                needScreenshot: true
+            },
+            {
+                step: 4,
+                title: '认识项目结构',
+                desc: '了解assets、src等目录的作用',
                 action: 'explain',
                 needScreenshot: true
             }
         ];
     }
 
-    getDefaultSteps() {
+    /**
+     * 通用教程步骤
+     */
+    _genericSteps(name) {
         return [
             {
                 step: 1,
-                title: '准备场景',
-                desc: '打开或创建目标场景',
+                title: '准备工作',
+                desc: `确保项目已打开，找到相关功能入口`,
                 action: 'prepare',
                 needScreenshot: true
             },
             {
                 step: 2,
                 title: '执行操作',
-                desc: '按照需求进行操作',
+                desc: `按照需求进行${name}相关操作`,
                 action: 'operate',
                 needScreenshot: true,
                 needGif: true
@@ -277,29 +372,23 @@ class SmartPlanner {
             {
                 step: 3,
                 title: '验证结果',
-                desc: '运行查看效果',
+                desc: '运行查看效果是否符合预期',
                 action: 'run',
-                needScreenshot: true,
-                needGif: true
+                needScreenshot: true
             }
         ];
     }
 
-    _generatePropertyDesc(schema) {
-        if (!schema.properties || !Object.keys(schema.properties).length) {
-            return '在属性面板中设置组件的各项属性';
-        }
-        const propNames = Object.keys(schema.properties).slice(0, 3).join('、');
-        return `设置关键属性：${propNames}等`;
-    }
-
-    _formatProperties(schema) {
-        if (!schema.properties) return null;
+    /**
+     * 格式化属性表格
+     */
+    _formatPropTable(props) {
+        if (!props || !Object.keys(props).length) return null;
 
         let table = '| 属性 | 类型 | 默认值 | 说明 |\n';
         table += '|------|------|--------|------|\n';
 
-        for (const [name, prop] of Object.entries(schema)) {
+        for (const [name, prop] of Object.entries(props)) {
             const type = prop.type || '';
             const defaultValue = prop.default !== undefined ? prop.default : '-';
             const tips = prop.tips || '';
@@ -319,41 +408,50 @@ async function main() {
     const input = args._[0];
 
     if (!input) {
-        console.log('用法: node workflow.js "写一个XXX的教程" [选项]');
+        console.log('用法: node workflow.js "<主题> [选项]"');
+        console.log('');
+        console.log('示例:');
+        console.log('  node workflow.js "PhysicsCollider组件文档"');
+        console.log('  node workflow.js "如何创建Scene3D"');
+        console.log('  node workflow.js "RigidBody使用教程" --dry-run');
+        console.log('');
         console.log('选项:');
         console.log('  --output <dir>   输出目录');
         console.log('  --dry-run       只生成计划不执行');
-        console.log('  --style <type>  文档风格 (tutorial/api)');
         console.log('  --version <ver> LayaAir版本 (默认3.4)');
         process.exit(1);
     }
 
     console.log(`📝 任务: ${input}\n`);
 
-    // 使用智能规划器
-    const planner = new SmartPlanner();
+    // 使用自动规划器
+    const planner = new AutoPlanner();
     const plan = await planner.plan(input);
 
     console.log(`\n📋 执行计划:`);
-    plan.steps.forEach(step => {
-        console.log(`   ${step.step}. ${step.title}`);
+    plan.steps.forEach((step, i) => {
+        console.log(`   ${i + 1}. ${step.title}`);
         if (step.needScreenshot) console.log(`      └─ 需要截图`);
         if (step.needGif) console.log(`      └─ 需要动图`);
+        if (step.contentData) console.log(`      └─ 包含属性表格`);
     });
 
     if (args.dryRun) {
-        console.log(`\n[DRY RUN] 计划已生成`);
-        console.log(`\n📄 生成文档预览:`);
-        const generator = new DocumentGenerator({ style: args.style || plan.intent });
+        console.log(`\n[DRY RUN] 计划已生成\n`);
+        const generator = require('./generator');
         const doc = generator.generate(plan, []);
+        console.log(`\n📄 文档预览:\n`);
         console.log(doc);
         return;
     }
 
-    // 创建输出目录
+    // 执行模式
     const StepExecutor = require('./executor');
+    const DocumentGenerator = require('./generator');
+
+    // 创建输出目录
     const outputDir = args.output || path.join(__dirname, '../doc-output');
-    const docName = plan.topic.toLowerCase().replace(/\s+/g, '-');
+    const docName = plan.topic.toLowerCase().replace(/\s+/g, '-').replace(/[^\w\-]/g, '');
     const workDir = path.join(outputDir, docName);
     const imgDir = path.join(workDir, 'img');
 
@@ -367,7 +465,7 @@ async function main() {
     const executor = new StepExecutor({
         scriptsPath: realToolsPath,
         imgDir: imgDir,
-        dryRun: args.dryRun
+        dryRun: false
     });
 
     const executionResults = [];
@@ -380,7 +478,7 @@ async function main() {
     // 生成文档
     console.log(`\n📄 生成文档...`);
     const generator = new DocumentGenerator({
-        style: args.style || plan.intent,
+        style: plan.intent,
         version: args.version || '3.4'
     });
 
@@ -388,12 +486,15 @@ async function main() {
     const docPath = generator.save(document, workDir);
 
     // 总结
+    const imgCount = executionResults.reduce((sum, r) => sum + (r.images?.filter(i => i).length || 0), 0);
+    const gifCount = executionResults.reduce((sum, r) => sum + (r.gifs?.filter(g => g).length || 0), 0);
+
     console.log(`\n✅ 完成！`);
     console.log(`   📄 文档: ${docPath}`);
-    console.log(`   🖼️  图片: ${imgDir}`);
-    console.log(`   📊 步骤数: ${plan.steps.length}`);
-    console.log(`   📸 截图数: ${executionResults.reduce((sum, r) => sum + (r.images?.length || 0), 0)}`);
-    console.log(`   🎬 动图数: ${executionResults.reduce((sum, r) => sum + (r.gifs?.length || 0), 0)}`);
+    console.log(`   📁 目录: ${workDir}`);
+    console.log(`   📊 步骤: ${plan.steps.length}`);
+    console.log(`   📸 截图: ${imgCount}`);
+    console.log(`   🎬 动图: ${gifCount}`);
 }
 
 function parseArgs() {
