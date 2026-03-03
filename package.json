@@ -1,0 +1,36 @@
+{
+  "name": "laya-doc-tools",
+  "version": "1.0.0",
+  "description": "LayaAir 文档编写工具链 - 截图、自动化、标注",
+  "main": "s.js",
+  "bin": {
+    "s": "./s.js",
+    "laya-doc": "./s.js"
+  },
+  "scripts": {
+    "screenshot": "node s.js shot",
+    "capture": "node s.js win",
+    "find": "node s.js find",
+    "click": "node s.js click",
+    "game": "node s.js game"
+  },
+  "keywords": [
+    "layaair",
+    "documentation",
+    "screenshot",
+    "automation",
+    "cdp"
+  ],
+  "author": "LayaAir MCP Team",
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.18.0",
+    "sharp": "^0.33.5",
+    "@nut-tree/nut-js": "^5.2.0"
+  },
+  "engines": {
+    "node": ">=16.0.0",
+    "platform": "win32"
+  },
+  "os": ["win32"]
+}

@@ -1,0 +1,14 @@
+# Node.js
+node_modules/
+package-lock.json
+
+# 临时文件
+*.tmp
+*.log
+_*.png
+_*.gif
+
+# IDE
+.vscode/
+.idea/
+*.iml

@@ -1,0 +1,21 @@
+{
+  "cdp": {
+    "port": 9222,
+    "defaultTarget": "sceneEditor",
+    "gameTarget": "game.html"
+  },
+  "ide": {
+    "windowTitle": "aidoc",
+    "remoteDebuggingPort": 9222
+  },
+  "screenshot": {
+    "padding": 8,
+    "strokeColor": "#FF2020",
+    "strokeWidth": 3,
+    "cornerRadius": 6
+  },
+  "paths": {
+    "tools": ".",
+    "temp": "../_temp"
+  }
+}
